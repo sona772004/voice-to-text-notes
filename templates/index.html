@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Caption Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .drop-zone {
+            border: 2px dashed #4a90e2;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+        }
+        .drop-zone:hover {
+            background-color: #f0f7ff;
+            border-color: #1a73e8;
+        }
+        .loading {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Image Caption Generator</h1>
+            <p class="text-gray-600">Upload an image and let AI generate a caption for it</p>
+        </header>
+
+        <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
+            <div id="drop-zone" class="drop-zone p-12 text-center cursor-pointer mb-8">
+                <div class="space-y-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <h3 class="text-xl font-medium text-gray-700">Drag & Drop your image here</h3>
+                    <p class="text-gray-500">or click to browse files</p>
+                    <p class="text-sm text-gray-400">Supports JPG, JPEG, PNG (Max 16MB)</p>
+                </div>
+                <input type="file" id="file-input" class="hidden" accept="image/*">
+            </div>
+
+            <div id="result" class="hidden">
+                <div class="flex flex-col md:flex-row gap-8">
+                    <div class="md:w-1/2">
+                        <div class="bg-gray-100 rounded-lg overflow-hidden">
+                            <img id="preview" src="#" alt="Preview" class="w-full h-auto max-h-96 object-contain">
+                        </div>
+                    </div>
+                    <div class="md:w-1/2 flex flex-col">
+                        <h3 class="text-xl font-semibold mb-4 text-gray-800">Generated Caption:</h3>
+                        <div class="bg-gray-50 p-4 rounded-lg flex-grow flex items-center">
+                            <p id="caption" class="text-lg text-gray-700"></p>
+                        </div>
+                        <div class="mt-4 flex justify-end">
+                            <button id="copy-btn" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition">
+                                Copy Caption
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="loading" class="loading text-center py-12">
+                <div class="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+                <p class="text-gray-600">Generating caption...</p>
+            </div>
+        </div>
+
+        <footer class="mt-12 text-center text-gray-500 text-sm">
+            <p>Built with TensorFlow, Flask, and Tailwind CSS</p>
+        </footer>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const preview = document.getElementById('preview');
+        const caption = document.getElementById('caption');
+        const result = document.getElementById('result');
+        const loading = document.getElementById('loading');
+        const copyBtn = document.getElementById('copy-btn');
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        // Highlight drop zone when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+
+        // Handle dropped files
+        dropZone.addEventListener('drop', handleDrop, false);
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFiles);
+        copyBtn.addEventListener('click', copyToClipboard);
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        function highlight() {
+            dropZone.classList.add('bg-blue-50', 'border-blue-400');
+        }
+
+        function unhighlight() {
+            dropZone.classList.remove('bg-blue-50', 'border-blue-400');
+        }
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles({ target: { files } });
+        }
+
+        function handleFiles(e) {
+            const files = e.target.files;
+            if (files.length === 0) return;
+            
+            const file = files[0];
+            if (!file.type.match('image.*')) {
+                alert('Please select an image file');
+                return;
+            }
+
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.src = e.target.result;
+                processImage(file);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function processImage(file) {
+            // Show loading, hide result
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success === false) {
+                    // Show error message
+                    showError(data.error || 'Failed to process image');
+                    
+                    // Still show the image if available
+                    if (data.image_url) {
+                        preview.src = data.image_url;
+                        result.style.display = 'block';
+                    }
+                    return;
+                }
+                
+                // Display result
+                preview.src = data.image_url;
+                caption.textContent = data.caption;
+                
+                // Show result
+                result.style.display = 'block';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                loading.style.display = 'none';
+                showError('An error occurred while processing the image. Please try again.');
+            });
+        }
+        
+        function showError(message) {
+            // Create or update error message element
+            let errorElement = document.getElementById('error-message');
+            if (!errorElement) {
+                errorElement = document.createElement('div');
+                errorElement.id = 'error-message';
+                errorElement.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4';
+                dropZone.parentNode.insertBefore(errorElement, dropZone.nextSibling);
+            }
+            
+            errorElement.innerHTML = `
+                <strong class="font-bold">Error!</strong>
+                <span class="block sm:inline">${message}</span>
+                <span class="absolute top-0 bottom-0 right-0 px-4 py-3" onclick="this.parentElement.remove()">
+                    <svg class="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                        <title>Close</title>
+                        <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
+                    </svg>
+                </span>
+            `;
+            
+            // Auto-remove error after 10 seconds
+            setTimeout(() => {
+                if (errorElement && errorElement.parentNode) {
+                    errorElement.parentNode.removeChild(errorElement);
+                }
+            }, 10000);
+        }
+
+        function copyToClipboard() {
+            const text = caption.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = 'Copied!';
+                copyBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                copyBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+                    copyBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
+        }
+    </script>
+</body>
+</html>
